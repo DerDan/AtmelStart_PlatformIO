@@ -5,6 +5,7 @@
 # Given an .atstart configuration file downloaded from the web app at start.atmel.com,
 # this library will download and correctly build the generated code as a simple
 # dependenty library in PlatformIO.
+# Daniel was here
 
 import sys
 import os
@@ -44,6 +45,7 @@ if not os.path.isfile(input_filename):
     sys.stderr.write("Error: atstart_file specifies a non-existent or invalid file: {}\n".format(input_filename))
     env.Exit(1)
 
+
 def convert_config_yaml_to_json(input, output):
     def dictToArray(d, idKey):
         a = []
@@ -56,8 +58,8 @@ def convert_config_yaml_to_json(input, output):
     def fixDefinition(a):
         for element in a:
             element["definition"] = {
-              "identifier": element["definition"],
-              "base": element["definition"]
+                "identifier": element["definition"],
+                "base": element["definition"]
             }
 
     def sort_config(config):
@@ -89,7 +91,7 @@ def convert_config_yaml_to_json(input, output):
         with open(input_filename, "r") as f:
             return json.load(f)
 
-    def dump(config, output_filename, pretty = False):
+    def dump(config, output_filename, pretty=False):
         with open(output_filename, "w") as f:
             indent = 2
             separators = (',', ': ')
@@ -103,6 +105,7 @@ def convert_config_yaml_to_json(input, output):
     config = sort_config(config)
     dump(config, output)
 
+
 def hash_file(file):
     import hashlib
     m = hashlib.md5()
@@ -110,6 +113,7 @@ def hash_file(file):
         for chunk in iter(lambda: f.read(4096), b""):
             m.update(chunk)
     return m.hexdigest()
+
 
 def download_package(config_file, download_dir, packages_dir):
     hash = hash_file(config_file)
@@ -121,7 +125,8 @@ def download_package(config_file, download_dir, packages_dir):
         print("Downloading Atmel Start package", filename, "...")
         with open(config_file, 'r') as project_json:
             headers = {'content-type': 'text/plain'}
-            r = requests.post('http://start.atmel.com/api/v1/generate/?format=atzip&compilers=[atmel_studio,make]&file_name_base=atmel_start_config', headers=headers, data=project_json)
+            r = requests.post('http://start.atmel.com/api/v1/generate/?format=atzip&compilers=[atmel_studio,make]&file_name_base=atmel_start_config', headers=headers,
+                              data=project_json)
         if not r.ok:
             # Double check that the JSON is minified. If it's not, you'll get a 404.
             print(r.text)
@@ -137,11 +142,14 @@ def download_package(config_file, download_dir, packages_dir):
 
     return package_dir
 
+
 convert_config_yaml_to_json(input_filename, output_filename)
 package_dir = download_package(output_filename, DOWNLOAD_DIR, PACKAGES_DIR)
 
+
 def valid_source(p):
     return "armcc" not in p and "IAR" not in p and "RVDS" not in p and "examples" not in p
+
 
 include_paths = []
 source_paths = []
@@ -162,9 +170,10 @@ if linker_script is None or not os.path.isfile(linker_script):
     sys.stderr.write("Error: Failed to find linker script in downloaded package.\n")
     env.Exit(1)
 
+
 def adjust_linker_offset(script_name, ldscript):
     offset_address = env.BoardConfig().get("upload.offset_address", "0")
-    if int(offset_address, 0)==0:
+    if int(offset_address, 0) == 0:
         return ldscript
 
     content = ""
@@ -178,12 +187,13 @@ def adjust_linker_offset(script_name, ldscript):
             content, flags=re.MULTILINE)
 
     offset_script = os.path.join(env.subst('$PROJECT_BUILD_DIR'),
-                    "%s_flash_%s.ld" % (script_name, offset_address))
+                                 "%s_flash_%s.ld" % (script_name, offset_address))
 
     with open(offset_script, "w") as fp:
         fp.write(content)
 
     return offset_script
+
 
 linker_script = adjust_linker_offset(env.subst('$PIOENV'), linker_script)
 
@@ -192,17 +202,30 @@ env.Append(
     CPPPATH=[os.path.realpath(p) for p in include_paths]
 )
 
+
 def src_dir(*x):
     return os.path.realpath(os.path.join(*x))
+
+
+framework = global_env.get('PIOFRAMEWORK', None)
 
 sources = ["-<*>"]
 sources.extend(["+<{}>".format(src_dir(sp, '*.c')) for sp in source_paths])
 sources.append("-<{}>".format(src_dir(package_dir, 'main.c')))
+if framework:
+    sources.append("-<{}>".format(src_dir(package_dir, '*\gcc\system_*.c')))
+    sources.append("-<{}>".format(src_dir(package_dir, '*\gcc\gcc\startup_*.c')))
+    sources.append("-<{}>".format(src_dir(package_dir, 'hal/utils/src/utils_syscalls.c')))
+    sources.append("-<{}>".format(src_dir(package_dir, 'hpl/core/hpl_init.c')))
+    init_stub = src_dir('_init_chip_stub.c')
+    sources.append("+<{}>".format(init_stub))
+    print(f"init_stub:    {init_stub}")
 
 env.Append(
     srcDir=package_dir,
     SRC_FILTER=sources
 )
 
-env.Append(
-    LINKFLAGS=['-T',linker_script])
+if not framework:
+    env.Append(
+        LINKFLAGS=['-T', linker_script])
